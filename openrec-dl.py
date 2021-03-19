@@ -352,10 +352,6 @@ def print_formats(formats_list):
         f"{str(int(float(format_settings['format']['BANDWIDTH']) / 1000))+'k':<6} " +
         f"{format_settings['format']['CODECS']:<24}")
 
-# live chat API/movies/id/chats?from_created_at=2019-05-20T16:44:29.000Z&is_including_system_message=false
-#           API/movies/id/chats?from_created_at=2019-05-20T16:45:58.000Z&is_including_system_message=false
-# iterate and save all json objects, start with movie json[started_at], get next chat json from last chat json[posted_at] until null iguess
-
 def dl_live_chat(s, movie_id, movie_filename, started_at):
     live_chat_filename = os.path.join(args.directory, f"{movie_filename}.live_chat.json")
     if os.path.isfile(live_chat_filename):
