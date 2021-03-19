@@ -402,7 +402,7 @@ def get_arguments():
     parser.add_argument("-F", "--list-formats", action="store_true", help="print available format details for a video and exit")
     parser.add_argument("--skip-download", action="store_true", help="do not download the video")
     parser.add_argument("--skip-convert", action="store_true", help="do not use ffmpeg to convert the MPEG-TS stream to MPEG-4")
-    parser.add_argument("links", metavar="LINK", nargs="+", help="openrec channel or video link(s)/ids")
+    parser.add_argument("links", metavar="LINK", nargs="*", help="openrec channel or video link(s)/ids")
     return parser.parse_args()
 
 def main():
