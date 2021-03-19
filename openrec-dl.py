@@ -18,7 +18,7 @@ import sys
 from time import sleep
 import urllib.parse
 
-VERSION_STRING="2021.03.18"
+VERSION_STRING="2021.03.18.3"
 
 OPENREC=r'^(?:https?:\/\/)?(?:www\.)?openrec\.tv\/(?P<type>[^\/]+?)\/(?P<id>[^\/]+)$'
 VALID_LIVE_ID=r'^(?P<id>[a-z0-9]+?)$'
@@ -390,7 +390,6 @@ def print_log(component, message, level=LogLevel.BASIC):
     print(f"[{component}] {message}")
 
 def get_arguments():
-    parser = argparse.ArgumentParser()
     parser.add_argument("--version", action="store_true", help="print version string and exit")
     parser.add_argument("-V", "--verbose", action="store_true", help="print debugging information")
     parser.add_argument("-d", "--directory", type=str, help="save directory (defaults to current)", default=os.getcwd())
@@ -410,7 +409,9 @@ def main():
     if args.version:
         print(VERSION_STRING)
         return
-    if len(args.links) > 0 and not os.path.isdir(args.directory):
+    if len(args.links) == 0:
+        parser.print_usage()
+    elif not os.path.isdir(args.directory):
         os.makedirs(args.directory)
     for link in args.links:
         # is openrec link
@@ -429,6 +430,7 @@ def main():
         else:
             print_log("openrec", f"invalid link or id \'{link}\'")
 
+parser = argparse.ArgumentParser()
 args = get_arguments()
 
 if __name__ == "__main__":
