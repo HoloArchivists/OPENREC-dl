@@ -296,7 +296,7 @@ def dl_m3u8_video(movie_id, movie_filename, m3u8_link):
             archive_file.write(f"{movie_id}\n")
 
 def mpeg_convert(file_path):
-    print_log("mpeg-convert", f"converting video to '{movie_filename}.mp4'")
+    print_log("mpeg-convert", f"converting video to '{file_path}.mp4'")
     ffmpeg_list = ["ffmpeg", "-i", f"{file_path}.ts", "-acodec", "copy", "-vcodec", "copy", f"{file_path}.mp4"]
     try:
         ffmpeg_process = Popen(ffmpeg_list, stdout=PIPE, stderr=PIPE)
