@@ -31,4 +31,6 @@ python3 openrec-dl.py [ARGUMENTS] LINK/ID [LINK/ID...]
 -F, --list-formats            print available format details for a video and exit
 --skip-download               do not download the video
 --skip-convert                do not use ffmpeg to convert the MPEG-TS stream to MPEG-4
+--cookies                     a Netscape format cookies file, may make available some
+                              downloads that are otherwise unavailable
 ```

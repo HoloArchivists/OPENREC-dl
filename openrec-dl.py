@@ -7,6 +7,7 @@ from gevent import monkey
 monkey.patch_all()
 from gevent.pool import Pool
 import glob
+from http import cookiejar
 import json
 import os
 from progress.bar import IncrementalBar
@@ -18,14 +19,18 @@ import sys
 from time import sleep
 import urllib.parse
 
-VERSION_STRING="2021.03.18.3"
+VERSION_STRING="2021.07.08.1"
+ISSUES_URL="https://github.com/CetaceanNation/OPENREC-dl/issues"
 
 OPENREC=r'^(?:https?:\/\/)?(?:www\.)?openrec\.tv\/(?P<type>[^\/]+?)\/(?P<id>[^\/]+)$'
-VALID_LIVE_ID=r'^(?P<id>[a-z0-9]+?)$'
+VALID_LIVE_ID=r'^(?P<id>[a-zA-Z0-9]+?)$'
 FULL_SIZE_IMG=r'\.w[0-9]{1,}\.ttl[0-9]{1,}\.(?P<ext>[a-z]{1,4})\?'
 FULL_SIZE_REP=r'.\g<ext>?q=100&quality=100&'
 CLEAN_FILENAME_KINDA=r'[^\w\-_\. \[\]\(\)]'
-API="https://public.openrec.tv/external/api/v5/"
+COOKIE_URL="www.openrec.tv"
+PUBLIC_API="https://public.openrec.tv/external/api/v5/"
+PRIVATE_API="https://apiv5.openrec.tv/api/v5/"
+MAX_MOVIE_RESPONSE=40
 
 class LogLevel(Enum):
     BASIC=1
@@ -95,7 +100,7 @@ class StreamDownloader():
             else:
                 sleep(0.05)
 
-def dl_channel(s, channel_id):
+def dl_channel(s, ps, channel_id):
     # check for argument that cannot be used
     if args.list_formats:
         print_log(f"channel:{channel_id}", "cannot use argument --list-formats with channel link")
@@ -171,12 +176,22 @@ def dl_channel(s, channel_id):
             print_log(f"icon:{channel_id}", "failed to retrieve channel cover")
             print_log(f"icon:{channel_id}", f"API response returned status code {cover_response.status_code}", LogLevel.VERBOSE)
 
-    movie_list_response = s.get(f"movies?channel_ids={channel_id}").json()
+    # retrieve list of all channel movies from API
+    movie_list = []
+    movie_list_response = []
+    movie_page_index = 1
+    while len(movie_list_response) == MAX_MOVIE_RESPONSE or movie_page_index == 1:
+        print_log(f"channel:{channel_id}", f"downloading videos page {movie_page_index}")
+        movie_list_response = s.get(f"movies?channel_ids={channel_id}&page={movie_page_index}").json()
+        movie_list.append(movie_list_response)
+        movie_page_index += 1
+    movie_list.append(movie_list_response)
+
     for movie_index in range(len(movie_list_response)):
         print_log(f"channel:{channel_id}", f"downloading video {movie_index + 1} of {len(movie_list_response)}")
-        dl_movie(s, movie_list_response[movie_index]["id"])
+        dl_movie(s, ps, movie_list_response[movie_index]["id"])
 
-def dl_movie(s, movie_id):
+def dl_movie(s, ps, movie_id):
     # check if we can skip
     if args.download_archive:
         if os.path.isfile(args.download_archive):
@@ -186,7 +201,7 @@ def dl_movie(s, movie_id):
                 print_log(f"movie:{movie_id}", "already recorded in archive")
                 return
 
-    # get video data and check validity
+    # get public video data and check validity
     movie_response = s.get(f"movies/{movie_id}")
     if not movie_response.ok:
         print_log(f"info:{movie_id}", "failed to get movie information")
@@ -195,7 +210,7 @@ def dl_movie(s, movie_id):
     m_json = movie_response.json()
     if "status" in m_json:
         print_log(f"info:{movie_id}", "failed to get movie information")
-        print_log(f"info:{movie_id}", f"API body returned status code {m_json['status']}: {m_json['message']}")
+        print_log(f"info:{movie_id}", f"API body returned status code {m_json['status']}: {m_json['message']}", LogLevel.VERBOSE)
         return
     
     # string to use in output video names
@@ -204,12 +219,37 @@ def dl_movie(s, movie_id):
     # remove ad info because who cares about ads
     m_json.pop("ad")
 
-    # api only gives public m3u8 by default. we dont care :^)
-    # derive m3u8 link from json[media][url_public]
-    # these links might not actually exist, so downloading relies on values from playlist.m3u8
+    # if no urls are returned, check the private API using cookies
+    if not m_json["media"]["url_public"]:
+        if ps:
+            print_log(f"info:{movie_id}", "no public playlist found")
+            priv_movie_response = ps.get(f"movies/{movie_id}/detail")
+            if not priv_movie_response.ok:
+                print_log(f"info:{movie_id}", "failed to get movie information")
+                print_log(f"info:{movie_id}", f"private API response returned status code {priv_movie_response.status_code}", LogLevel.VERBOSE)
+                return
+            pm_json = priv_movie_response.json()
+            if "status" in pm_json and pm_json["status"] < 0:
+                print_log(f"info:{movie_id}", "failed to get movie information")
+                print_log(f"info:{movie_id}", f"private API body returned status code {pm_json['status']}: {pm_json['message']}", LogLevel.VERBOSE)
+                return
+            if len(pm_json["data"]["items"]) > 0 and pm_json["data"]["items"][0]["media"]["url"]:
+                m_json["media"]["url_public"] = pm_json["data"]["items"][0]["media"]["url"]
+            else:
+                print_log(f"info:{movie_id}", f"failed to get any playlist information, check that you have access to this livestream or report this issue at \'{ISSUES_URL}\'")
+                return
+        else:
+            print_log(f"info:{movie_id}", "failed to get any playlist information, if you have access to this livestream try using --cookies")
+            return
+
+    # API may only give public m3u8 by default. that's all we need for the rest of the playlists :^)
+    # derive m3u8 link from json[media][url_public] (or private json[media][url])
+    # these links might not actually exist, so downloading relies on values from the default playlist.m3u8
     m_json["media"]["url"] = urllib.parse.urljoin(m_json["media"]["url_public"], "playlist.m3u8")
     m_json["media"]["url_audio"] = urllib.parse.urljoin(m_json["media"]["url_public"], "aac.m3u8")
     m_json["media"]["url_source"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_source/chunklist.m3u8")
+    m_json["media"]["url_high"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_high/chunklist.m3u8")
+    m_json["media"]["url_medium"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_medium/chunklist.m3u8")
     m_json["media"]["url_low_latency"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_low/chunklist.m3u8")
     m_json["media"]["url_ull"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_144p/chunklist.m3u8")
 
@@ -310,21 +350,31 @@ def mpeg_convert(file_path):
 def get_m3u8_info(playlist_link):
     m3u8_info = []
     m3u8_text = requests.get(playlist_link).text
+    print_log("get-m3u8-info", f"retrieving playlist from {playlist_link}", LogLevel.VERBOSE)
     media_details = None
     format_details = None
     for line in m3u8_text.splitlines():
         if line.startswith("#EXT-X-MEDIA:"):
+            # parse media details
             media_details = parse_m3u8_attributes(line)
-            #media_type, group_id, name = media.get("TYPE"), media.get("GROUP-ID"), media.get("NAME")
         elif line.startswith("#EXT-X-STREAM-INF:"):
+            # parse format details
             format_details = parse_m3u8_attributes(line)
         elif not line.startswith("#"):
             if line.endswith(".m3u8"):
-                if not media_details:
-                    print_log("get-m3u8-info", f"could not find media details for stream with format '{str(format_details)}'", LogLevel.VERBOSE)
-                elif not format_details:
-                    print_log("get-m3u8-info", f"could not find format details for stream with media '{str(media_details)}'", LogLevel.VERBOSE)
+                if format_details:
+                    if not "FRAME-RATE" in format_details:
+                        format_details["FRAME-RATE"] = ""
+                    if not media_details:
+                        print_log("get-m3u8-info", f"could not find media details for playlist '{line}', using format details", LogLevel.VERBOSE)
+                        if "source" in line:
+                            media_name = "Source"
+                        else:
+                            media_name = format_details["RESOLUTION"].split("x")[1] + "p"
+                        media_details = {"NAME": media_name, "GROUP-ID": "", "TYPE": ""}
                 else:
+                    print_log("get-m3u8-info", f"could not find format details for playlist '{line}', please report this issue at \'{ISSUES_URL}\'")
+                if format_details and media_details:
                     m3u8_info += [{"location": line, "media": media_details, "format": format_details}]
                     media_details = None
                     format_details = None
@@ -351,6 +401,7 @@ def print_formats(formats_list):
         f"{format_settings['format']['FRAME-RATE']:<4} " +
         f"{str(int(float(format_settings['format']['BANDWIDTH']) / 1000))+'k':<6} " +
         f"{format_settings['format']['CODECS']:<24}")
+        
 
 def dl_live_chat(s, movie_id, movie_filename, started_at):
     live_chat_filename = os.path.join(args.directory, f"{movie_filename}.live_chat.json")
@@ -384,6 +435,27 @@ def dl_live_chat(s, movie_id, movie_filename, started_at):
         print_log(f"live-chat:{movie_id}", f"unexpected ending with API response status code {chat_response.status_code}", LogLevel.VERBOSE)
     os.rename(f"{live_chat_filename}.tmp", live_chat_filename)
 
+def create_priv_api_session(cookie_jar_path):
+    priv_session = sessions.BaseUrlSession(base_url=PRIVATE_API)
+    cookie_jar = cookiejar.MozillaCookieJar(cookie_jar_path)
+    try:
+        cookie_jar.load()
+    except:
+        print_log(f"failed to load cookies file {cookie_jar_path}, continuing without cookies")
+        return None
+    # clean up the cookie jar and get necessary header values for private API
+    session_headers = {}
+    for c in cookie_jar:
+        if c.domain != COOKIE_URL:
+            cookie_jar.clear(c.domain, c.path, c.name)
+        elif c.name == "access_token":
+            session_headers["access-token"] = c.value
+        elif c.name == "uuid":
+            session_headers["uuid"] = c.value
+    priv_session.headers = session_headers
+    priv_session.cookies = cookie_jar
+    return priv_session
+
 def print_log(component, message, level=LogLevel.BASIC):
     if level == LogLevel.VERBOSE and not args.verbose:
         return
@@ -401,11 +473,18 @@ def get_arguments():
     parser.add_argument("-F", "--list-formats", action="store_true", help="print available format details for a video and exit")
     parser.add_argument("--skip-download", action="store_true", help="do not download the video")
     parser.add_argument("--skip-convert", action="store_true", help="do not use ffmpeg to convert the MPEG-TS stream to MPEG-4")
+    parser.add_argument("--cookies", metavar="COOKIES FILE", type=str, help="path to a Netscape format cookies file where cookies will be read from/written to")
     parser.add_argument("links", metavar="LINK", nargs="*", help="openrec channel or video link(s)/ids")
     return parser.parse_args()
 
 def main():
-    api_session = sessions.BaseUrlSession(base_url=API)
+    pub_api_session = sessions.BaseUrlSession(base_url=PUBLIC_API)
+    priv_api_session = None
+    if args.cookies:
+        if os.path.isfile(args.cookies):
+            priv_api_session = create_priv_api_session(args.cookies)
+        else:
+            print_log("openrec-dl", f"could not find cookies file \'{args.cookies}\', continuing without cookies")
     if args.version:
         print(VERSION_STRING)
         return
@@ -420,13 +499,13 @@ def main():
         if openrec_m:
             t = openrec_m.group("type")
             if t == "user":
-                dl_channel(api_session, openrec_m.group("id"))
+                dl_channel(pub_api_session, priv_api_session, openrec_m.group("id"))
             elif t == "live":
-                dl_movie(api_session, openrec_m.group("id"))
+                dl_movie(pub_api_session, priv_api_session, openrec_m.group("id"))
             else:
                 print_log("openrec", f"unknown link type \'{t}\'")
         elif id_m:
-            dl_movie(api_session, id_m.group("id"))
+            dl_movie(pub_api_session, priv_api_session, id_m.group("id"))
         else:
             print_log("openrec", f"invalid link or id \'{link}\'")
 
