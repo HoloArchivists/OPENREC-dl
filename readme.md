@@ -31,4 +31,10 @@ python3 openrec-dl.py [ARGUMENTS] LINK/ID [LINK/ID...]
 -F, --list-formats            print available format details for a video and exit
 --skip-download               do not download the video
 --skip-convert                do not use ffmpeg to convert the MPEG-TS stream to MPEG-4
+--cookies                     a Netscape format cookies file, may make available some
+                              downloads that are otherwise unavailable
 ```
+
+## Cookies
+
+If you are using a cookeis file and have a free account, the downloader will attempt to use the ability to view two videos free per day. If you have premium you should encounter no limits to what videos the downloader can access.
