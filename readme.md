@@ -34,3 +34,7 @@ python3 openrec-dl.py [ARGUMENTS] LINK/ID [LINK/ID...]
 --cookies                     a Netscape format cookies file, may make available some
                               downloads that are otherwise unavailable
 ```
+
+## Cookies
+
+If you are using a cookeis file and have a free account, the downloader will attempt to use the ability to view two videos free per day. If you have premium you should encounter no limits to what videos the downloader can access.

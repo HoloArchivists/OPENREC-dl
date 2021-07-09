@@ -219,39 +219,9 @@ def dl_movie(s, ps, movie_id):
     # remove ad info because who cares about ads
     m_json.pop("ad")
 
-    # if no urls are returned, check the private API using cookies
-    if not m_json["media"]["url_public"]:
-        if ps:
-            print_log(f"info:{movie_id}", "no public playlist found")
-            priv_movie_response = ps.get(f"movies/{movie_id}/detail")
-            if not priv_movie_response.ok:
-                print_log(f"info:{movie_id}", "failed to get movie information")
-                print_log(f"info:{movie_id}", f"private API response returned status code {priv_movie_response.status_code}", LogLevel.VERBOSE)
-                return
-            pm_json = priv_movie_response.json()
-            if "status" in pm_json and pm_json["status"] < 0:
-                print_log(f"info:{movie_id}", "failed to get movie information")
-                print_log(f"info:{movie_id}", f"private API body returned status code {pm_json['status']}: {pm_json['message']}", LogLevel.VERBOSE)
-                return
-            if len(pm_json["data"]["items"]) > 0 and pm_json["data"]["items"][0]["media"]["url"]:
-                m_json["media"]["url_public"] = pm_json["data"]["items"][0]["media"]["url"]
-            else:
-                print_log(f"info:{movie_id}", f"failed to get any playlist information, check that you have access to this livestream or report this issue at \'{ISSUES_URL}\'")
-                return
-        else:
-            print_log(f"info:{movie_id}", "failed to get any playlist information, if you have access to this livestream try using --cookies")
-            return
-
-    # API may only give public m3u8 by default. that's all we need for the rest of the playlists :^)
-    # derive m3u8 link from json[media][url_public] (or private json[media][url])
-    # these links might not actually exist, so downloading relies on values from the default playlist.m3u8
-    m_json["media"]["url"] = urllib.parse.urljoin(m_json["media"]["url_public"], "playlist.m3u8")
-    m_json["media"]["url_audio"] = urllib.parse.urljoin(m_json["media"]["url_public"], "aac.m3u8")
-    m_json["media"]["url_source"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_source/chunklist.m3u8")
-    m_json["media"]["url_high"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_high/chunklist.m3u8")
-    m_json["media"]["url_medium"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_medium/chunklist.m3u8")
-    m_json["media"]["url_low_latency"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_low/chunklist.m3u8")
-    m_json["media"]["url_ull"] = urllib.parse.urljoin(m_json["media"]["url_public"], "chunklist_144p/chunklist.m3u8")
+    m_json["media"] = derive_media_playlists(movie_id, m_json["media"], ps)
+    if not m_json["media"]:
+        return
 
     formats_list = get_m3u8_info(m_json["media"]["url"])
 
@@ -296,6 +266,72 @@ def dl_movie(s, ps, movie_id):
             print_log(f"movie:{movie_id}", f"could not find video format '{args.format}'. to view all available formats, use --list-formats")
     else:
         print_log(f"movie:{movie_id}", f"skipping download")
+
+def derive_media_playlists(movie_id, media_json, ps):
+    if not media_json["url_public"]:
+        if ps:
+            print_log(f"info:{movie_id}", "no public playlist found")
+            priv_movie_response = ps.get(f"movies/{movie_id}/detail")
+            if not priv_movie_response.ok:
+                print_log(f"info:{movie_id}", "failed to get movie information")
+                print_log(f"info:{movie_id}", f"private API response returned status code {priv_movie_response.status_code}", LogLevel.VERBOSE)
+                return None
+            pm_json = priv_movie_response.json()
+            if "status" in pm_json and pm_json["status"] < 0:
+                print_log(f"info:{movie_id}", "failed to get movie information")
+                print_log(f"info:{movie_id}", f"private API body returned status code {pm_json['status']}: {pm_json['message']}", LogLevel.VERBOSE)
+                return None
+            if len(pm_json["data"]["items"]) > 0:
+                if pm_json["data"]["items"][0]["media"]["url"]:
+                    media_json["url_public"] = pm_json["data"]["items"][0]["media"]["url"]
+                else:
+                    # attempt to use a free watch
+                    view_res = ps.post("users/me/views-limit", json={"movie_id": movie_id})
+                    if not view_res.ok:
+                        print_log(f"info:{movie_id}", "failed to request watch for movie")
+                        print_log(f"info:{movie_id}", f"private API response returned status code {view_res.status_code}", LogLevel.VERBOSE)
+                        return None
+                    view_json = view_res.json()
+                    if "status" in view_json and view_json["status"] < 0:
+                        print_log(f"info:{movie_id}", "failed due to bad response from view limit endpoint")
+                        print_log(f"info:{movie_id}", f"private API body returned status code {view_json['status']}: {view_json['message']}", LogLevel.VERBOSE)
+                        return None
+                    if view_json["data"][0]["has_permission"]:
+                        # This will be re-worked along with the entire function in another commit, yes i know this is bad
+                        print_log(f"info:{movie_id}", f"using free watch, you have {view_json['data'][0]['remain']} watches remaining")
+                        priv_movie_response = ps.get(f"movies/{movie_id}/detail")
+                        if not priv_movie_response.ok:
+                            print_log(f"info:{movie_id}", "failed to get movie information")
+                            print_log(f"info:{movie_id}", f"private API response returned status code {priv_movie_response.status_code}", LogLevel.VERBOSE)
+                            return None
+                        pm_json = priv_movie_response.json()
+                        if "status" in pm_json and pm_json["status"] < 0:
+                            print_log(f"info:{movie_id}", "failed to get movie information")
+                            print_log(f"info:{movie_id}", f"private API body returned status code {pm_json['status']}: {pm_json['message']}", LogLevel.VERBOSE)
+                            return None
+                        if len(pm_json["data"]["items"]) > 0:
+                            if pm_json["data"]["items"][0]["media"]["url"]:
+                                media_json["url_public"] = pm_json["data"]["items"][0]["media"]["url"]
+                    else:
+                        print_log(f"info:{movie_id}", f"failed to get movie access, no free watches remaining")
+                        return None
+            else:
+                print_log(f"info:{movie_id}", f"failed to get any playlist information, check that you have access to this livestream or report this issue at \'{ISSUES_URL}\'")
+                return None
+        else:
+            print_log(f"info:{movie_id}", "failed to get any playlist information, if you have access to this livestream try using --cookies")
+            return None
+    # API may only give public m3u8 by default. that's all we need for the rest of the playlists :^)
+    # derive m3u8 link from json[media][url_public] (or private json[media][url])
+    # these links might not actually exist, so downloading relies on values from the default playlist.m3u8
+    media_json["url"] = urllib.parse.urljoin(media_json["url_public"], "playlist.m3u8")
+    media_json["url_audio"] = urllib.parse.urljoin(media_json["url_public"], "aac.m3u8")
+    media_json["url_source"] = urllib.parse.urljoin(media_json["url_public"], "chunklist_source/chunklist.m3u8")
+    media_json["url_high"] = urllib.parse.urljoin(media_json["url_public"], "chunklist_high/chunklist.m3u8")
+    media_json["url_medium"] = urllib.parse.urljoin(media_json["url_public"], "chunklist_medium/chunklist.m3u8")
+    media_json["url_low_latency"] = urllib.parse.urljoin(media_json["url_public"], "chunklist_low/chunklist.m3u8")
+    media_json["url_ull"] = urllib.parse.urljoin(media_json["url_public"], "chunklist_144p/chunklist.m3u8")
+    return media_json
 
 def dl_m3u8_video(movie_id, movie_filename, m3u8_link):
     movie_path = os.path.join(args.directory, f"{movie_filename}")
