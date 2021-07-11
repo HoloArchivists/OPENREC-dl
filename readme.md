@@ -38,4 +38,4 @@ python3 openrec-dl.py [ARGUMENTS] LINK/ID [LINK/ID...]
 
 ## Cookies
 
-If you are using a cookeis file and have a free account, the downloader will attempt to use the ability to view two videos free per day. If you have premium you should encounter no limits to what videos the downloader can access.
+If you are using a cookies file and have a free account, the downloader will attempt to use the ability to view two videos free per day, but only if it cannot get around this restriction already. If you have premium you should encounter no limits to what videos the downloader can access.
