@@ -69,12 +69,13 @@ class LogLevel(Enum):
     VERBOSE=2
 
 class DownloadBar(IncrementalBar):
-    suffix="%(percent).1f%% ETA %(time_remaining)s"
+    suffix="%(percent).1f%%"
     @property
     def time_remaining(self):
-        ts = self.eta_td.total_seconds()
-        m = ts % 60
-        s = ts / 60
+        time_per_event = float(self.elapsed) / float(self.index)
+        seconds_remaining = time_per_event * self.remaining
+        m = seconds_remaining % 60
+        s = seconds_remaining / 60
         return f"{int(m)}:{int(s):02}"
 
 class StreamDownloader():
@@ -158,12 +159,12 @@ def dl_channel(s, ps, channel_id):
     search_query_param = urllib.parse.urlencode({"search_query": c_init_json["name"]})
     search_response = s.get(f'search-users?{search_query_param}')
 
-    # use /channels json if /search-users json doesn't exist for some reason
+    # use /channels json if /search-users json doesn't exist/can't be found for some reason
     c_json = c_init_json
     if search_response.ok:
         found_full_json = False
         for user_result in search_response.json():
-            if user_result["name"] == c_init_json["name"]:
+            if user_result["name"] == c_init_json["name"] and user_result["openrec_user_id"] == c_init_json["openrec_user_id"]:
                 c_json = user_result
                 found_full_json = True
                 break
@@ -175,22 +176,32 @@ def dl_channel(s, ps, channel_id):
 
     if args.write_info_json:
         info_filename = f"{channel_string}.info.json"
+        info_filepath = os.path.join(args.directory, info_filename)
+        if os.path.isfile(f"{info_filepath}.tmp"):
+            os.remove(f"{info_filepath}.tmp")
         print_log(f"info:{channel_id}", f"writing channel information to '{info_filename}'")
-        with open(os.path.join(args.directory, f"{info_filename}.tmp"), "w") as channel_info:
+        with open(f"{info_filepath}.tmp", "w") as channel_info:
             channel_info.write(json.dumps(c_json))
-        os.rename(os.path.join(args.directory, f"{info_filename}.tmp"), os.path.join(args.directory, info_filename))
+        if os.path.isfile(info_filepath):
+            os.remove(info_filepath)
+        os.rename(f"{info_filepath}.tmp", info_filepath)
     
     if args.write_thumbnail:
         # icon (avatar)
         full_size_icon_url = re.sub(FULL_SIZE_IMG, FULL_SIZE_REP, c_json["icon_image_url"])
         icon_format = urllib.parse.parse_qs(full_size_icon_url)["format"][0]
         icon_filename = f"{channel_string}-icon.{icon_format}"
+        icon_filepath = os.path.join(args.directory, icon_filename)
+        if os.path.isfile(f"{icon_filepath}.tmp"):
+            os.remove(f"{icon_filepath}.tmp")
         print_log(f"icon:{channel_id}", f"writing channel icon to '{icon_filename}'")
         icon_response = requests.get(full_size_icon_url)
         if icon_response.ok:
-            with open(os.path.join(args.directory, f"{icon_filename}.tmp"), "wb") as channel_icon:
+            with open(f"{icon_filepath}.tmp", "wb") as channel_icon:
                 channel_icon.write(icon_response.content)
-            os.rename(os.path.join(args.directory, f"{icon_filename}.tmp"), os.path.join(args.directory, icon_filename))
+            if os.path.isfile(icon_filepath):
+                os.remove(icon_filepath)
+            os.rename(f"{icon_filepath}.tmp", icon_filepath)
         else:
             print_log(f"icon:{channel_id}", "failed to retrieve channel icon")
             print_log(f"icon:{channel_id}", f"API response returned status code {icon_response.status_code}", LogLevel.VERBOSE)
@@ -199,12 +210,17 @@ def dl_channel(s, ps, channel_id):
         full_size_cover_url = re.sub(FULL_SIZE_IMG, FULL_SIZE_REP, c_json["cover_image_url"])
         cover_format = urllib.parse.parse_qs(full_size_cover_url)["format"][0]
         cover_filename = f"{channel_string}-cover.{cover_format}"
+        cover_filepath = os.path.join(args.directory, cover_filename)
+        if os.path.isfile(f"{cover_filepath}.tmp"):
+            os.remove(f"{cover_filepath}.tmp")
         print_log(f"cover:{channel_id}", f"writing channel cover to '{cover_filename}'")
         cover_response = requests.get(full_size_icon_url)
         if cover_response.ok:
-            with open(os.path.join(args.directory, f"{cover_filename}.tmp"), "wb") as channel_cover:
+            with open(f"{cover_filepath}.tmp", "wb") as channel_cover:
                 channel_cover.write(cover_response.content)
-            os.rename(os.path.join(args.directory, f"{cover_filename}.tmp"), os.path.join(args.directory, cover_filename))
+            if os.path.isfile(cover_filepath):
+                os.remove(cover_filepath)
+            os.rename(f"{cover_filepath}.tmp", cover_filepath)
         else:
             print_log(f"icon:{channel_id}", "failed to retrieve channel cover")
             print_log(f"icon:{channel_id}", f"API response returned status code {cover_response.status_code}", LogLevel.VERBOSE)
@@ -281,21 +297,31 @@ def dl_movie(s, ps, movie_id):
 
     if args.write_info_json:
         info_filename = f"{movie_string}.info.json"
+        info_filepath = os.path.join(args.directory, info_filename)
+        if os.path.isfile(f"{info_filepath}.tmp"):
+            os.remove(f"{info_filepath}.tmp")
         print_log(f"info:{movie_id}", f"writing video information to '{info_filename}'")
-        with open(os.path.join(args.directory, f"{info_filename}.tmp"), "w") as movie_info:
+        with open(f"{info_filepath}.tmp", "w") as movie_info:
             movie_info.write(json.dumps(m_json))
-        os.rename(os.path.join(args.directory, f"{info_filename}.tmp"), os.path.join(args.directory, info_filename))
+        if os.path.isfile(info_filepath):
+            os.remove(info_filepath)
+        os.rename(f"{info_filepath}.tmp", info_filepath)
     
     if args.write_thumbnail:
         full_size_thumb_url = re.sub(FULL_SIZE_IMG, FULL_SIZE_REP, m_json["thumbnail_url"])
         thumbnail_format = urllib.parse.parse_qs(full_size_thumb_url)["format"][0]
         thumbnail_filename = f"{movie_string}.{thumbnail_format}"
+        thumbnail_filepath = os.path.join(args.directory, thumbnail_filename)
+        if os.path.isfile(f"{thumbnail_filepath}.tmp"):
+            os.remove(f"{thumbnail_filepath}.tmp")
         print_log(f"thumbnail:{movie_id}", f"writing thumbnail to '{thumbnail_filename}'")
         thumb_response = requests.get(full_size_thumb_url)
         if thumb_response.ok:
-            with open(os.path.join(args.directory, f"{thumbnail_filename}.tmp"), "wb") as movie_thumbnail:
+            with open(f"{thumbnail_filepath}.tmp", "wb") as movie_thumbnail:
                 movie_thumbnail.write(thumb_response.content)
-            os.rename(os.path.join(args.directory, f"{thumbnail_filename}.tmp"), os.path.join(args.directory, thumbnail_filename))
+            if os.path.isfile(thumbnail_filepath):
+                os.remove(thumbnail_filepath)
+            os.rename(f"{thumbnail_filepath}.tmp", thumbnail_filepath)
         else:
             print_log(f"thumbnail:{movie_id}", "failed to retrieve video thumbnail")
             print_log(f"thumbnail:{movie_id}", f"API response returned status code {thumb_response.status_code}", LogLevel.VERBOSE)
@@ -426,37 +452,38 @@ def dl_m3u8_video(movie_id, movie_filename, m3u8_link):
     # don't re-download
     if os.path.isfile(f"{movie_path}.mp4") or (os.path.isfile(f"{movie_path}.ts") and args.skip_convert):
         print_log(f"movie:{movie_id}", f"already downloaded")
-    elif os.path.isfile(f"{movie_path}.ts"):
-        print_log(f"movie:{movie_id}", f"already downloaded")
-    # can't resume downloads (atm), so remove progress
     else:
-        if os.path.isfile(f"{movie_path}.ts.tmp"):
-            os.remove(f"{movie_path}.ts.tmp")
-            for seg_file in os.listdir(args.directory):
-                if re.fullmatch(r"^" + f"{re.escape(movie_filename)}" + r"\.seg[0-9]{1,}$", seg_file):
-                    os.remove(seg_file)
-        
-        # get necessary variables ready
-        playlist_base = urllib.parse.urljoin(m3u8_link, ".")
-        m3u8_text = requests.get(m3u8_link).text
-        ts_list = [n for n in m3u8_text.splitlines() if n and not n.startswith("#")]
-        ordered_ts_list = list(zip(ts_list, [n for n in range(len(ts_list))]))
-
-        # run the downloader
-        print_log(f"movie:{movie_id}", f"writing video to '{movie_filename}.ts'")
-        stream_downloader = StreamDownloader(playlist_base)
-        download_bar = DownloadBar(f"[movie:{movie_id}]", max=len(ts_list))
-        stream_downloader.run(movie_filename, ordered_ts_list, download_bar)
-
-        # if success, check if converting
-        if stream_downloader.success:
-            download_bar.finish()
-            os.rename(f"{movie_path}.ts.tmp", f"{movie_path}.ts")
+        if os.path.isfile(f"{movie_path}.ts"):
+            print_log(f"movie:{movie_id}", f"already downloaded")
+        # can't resume downloads (atm), so remove progress
         else:
-            print_log(f"movie:{movie_id}", f"failed to download")
-            return
-    if not args.skip_convert:
-        mpeg_convert(os.path.join(args.directory, f"{movie_filename}"))
+            if os.path.isfile(f"{movie_path}.ts.tmp"):
+                os.remove(f"{movie_path}.ts.tmp")
+                for seg_file in os.listdir(args.directory):
+                    if re.fullmatch(r"^" + f"{re.escape(movie_filename)}" + r"\.seg[0-9]{1,}$", seg_file):
+                        os.remove(seg_file)
+            
+            # get necessary variables ready
+            playlist_base = urllib.parse.urljoin(m3u8_link, ".")
+            m3u8_text = requests.get(m3u8_link).text
+            ts_list = [n for n in m3u8_text.splitlines() if n and not n.startswith("#")]
+            ordered_ts_list = list(zip(ts_list, [n for n in range(len(ts_list))]))
+
+            # run the downloader
+            print_log(f"movie:{movie_id}", f"writing video to '{movie_filename}.ts'")
+            stream_downloader = StreamDownloader(playlist_base)
+            download_bar = DownloadBar(f"[movie:{movie_id}]", max=len(ts_list))
+            stream_downloader.run(movie_filename, ordered_ts_list, download_bar)
+
+            # if success, check if converting
+            if stream_downloader.success:
+                download_bar.finish()
+                os.rename(f"{movie_path}.ts.tmp", f"{movie_path}.ts")
+            else:
+                print_log(f"movie:{movie_id}", f"failed to download")
+                return
+        if not args.skip_convert:
+            mpeg_convert(os.path.join(args.directory, f"{movie_filename}"))
     if args.download_archive:
         with open(args.download_archive, "a") as archive_file:
             archive_file.write(f"{movie_id}\n")
@@ -549,21 +576,22 @@ def print_formats(formats_list):
         
 
 def dl_live_chat(s, movie_id, movie_filename, started_at):
-    live_chat_filename = os.path.join(args.directory, f"{movie_filename}.live_chat.json")
-    if os.path.isfile(live_chat_filename):
+    live_chat_filename = f"{movie_filename}.live_chat.json"
+    live_chat_filepath = os.path.join(args.directory, live_chat_filename)
+    if os.path.isfile(live_chat_filepath):
         print_log(f"live-chat:{movie_id}", "already downloaded")
         return
     # no resuming downloads, so just remove the temp
-    elif os.path.isfile(f"{live_chat_filename}.tmp"):
-        os.remove(f"{live_chat_filename}.tmp")
+    elif os.path.isfile(f"{live_chat_filepath}.tmp"):
+        os.remove(f"{live_chat_filepath}.tmp")
 
     # read datetime object and remove utc offset for using in the chat API
     chat_dt = datetime.strptime(started_at, "%Y-%m-%dT%H:%M:%S%z")
     chat_dt = (chat_dt - chat_dt.utcoffset()).replace(tzinfo=None)
     chat_response = s.get(f"movies/{movie_id}/chats?from_created_at={chat_dt.isoformat()}.000Z&is_including_system_message=false")
     
-    print_log(f"live-chat:{movie_id}", f"writing live chat to {movie_filename}.live_chat.json")
-    with open(f"{live_chat_filename}.tmp", "w") as live_chat_file:
+    print_log(f"live-chat:{movie_id}", f"writing live chat to \'{live_chat_filename}\'")
+    with open(f"{live_chat_filepath}.tmp", "w") as live_chat_file:
         # loop until blank response
         while chat_response.ok and len(chat_response.json()) > 0:
             last_post_time = datetime.strptime(chat_response.json()[-1]["posted_at"], "%Y-%m-%dT%H:%M:%S%z")
@@ -578,7 +606,7 @@ def dl_live_chat(s, movie_id, movie_filename, started_at):
             chat_response = s.get(f"movies/{movie_id}/chats?from_created_at={chat_dt.isoformat()}.000Z&is_including_system_message=false")
     if not chat_response.ok:
         print_log(f"live-chat:{movie_id}", f"unexpected ending with API response status code {chat_response.status_code}", LogLevel.VERBOSE)
-    os.rename(f"{live_chat_filename}.tmp", live_chat_filename)
+    os.rename(f"{live_chat_filepath}.tmp", live_chat_filepath)
 
 def create_priv_api_session(cookie_jar_path):
     priv_session = sessions.BaseUrlSession(base_url=PRIVATE_API)
