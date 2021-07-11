@@ -1,6 +1,6 @@
 # OPENREC-dl
 
-As the name might suggest, this is a "youtube-dl"-like python downloader for the site [OPENREC.tv](https://www.openrec.tv/). The arguments and output are as you might expect, but just to be sure they are outlined below. Developed using Python 3.8.5, may not work on previous versions.
+As the name might suggest, this is a python downloader for the site [OPENREC.tv](https://www.openrec.tv/). The arguments and output are as you might expect if you've used a downloader like youtube-dl before, but just to be sure they are outlined below. Developed using Python 3.8.5, tested working on Python 3.7.3, may not work on older versions.
 
 ## Install
 
