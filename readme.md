@@ -27,7 +27,8 @@ python3 openrec-dl.py [ARGUMENTS] LINK/ID [LINK/ID...]
 --write-thumbnail             write thumbnail to image file
 --write-live-chat             write live chat comments to .live_chat.json file
 -f, --format FORMAT           video format, specified by either NAME or
-                              GROUP-ID (defaults to Source)
+                              GROUP-ID, or the keyword "best" (defaults is "best",
+                              retrieves either Source quality or highest bitrate)
 -F, --list-formats            print available format details for a video and exit
 --skip-download               do not download the video
 --skip-convert                do not use ffmpeg to convert the MPEG-TS stream to MPEG-4
