@@ -20,7 +20,7 @@ from time import sleep
 import urllib.parse
 
 VERSION_STRING="2021.07.08.1"
-ISSUES_URL="https://github.com/CetaceanNation/OPENREC-dl/issues"
+ISSUES_URL="https://github.com/HoloArchivists/OPENREC-dl/issues"
 
 OPENREC=r'^(?:https?:\/\/)?(?:www\.)?openrec\.tv\/(?P<type>[^\/]+?)\/(?P<id>[^\/]+)$'
 VALID_LIVE_ID=r'^(?P<id>[a-zA-Z0-9]+?)$'
