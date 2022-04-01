@@ -608,14 +608,17 @@ def dl_live_chat(s, movie_id, movie_filename, started_at):
         print_log(f"live-chat:{movie_id}", f"unexpected ending with API response status code {chat_response.status_code}", LogLevel.VERBOSE)
     os.rename(f"{live_chat_filepath}.tmp", live_chat_filepath)
 
-def create_priv_api_session(cookie_jar_path):
+def create_priv_api_session(cookie_jar_path=None, cookie_jar=None):
     priv_session = sessions.BaseUrlSession(base_url=PRIVATE_API)
-    cookie_jar = cookiejar.MozillaCookieJar(cookie_jar_path)
-    try:
-        cookie_jar.load()
-    except:
-        print_log(f"failed to load cookies file {cookie_jar_path}, continuing without cookies")
-        return None
+    
+    if cookie_jar_path is not None:    
+        cookie_jar = cookiejar.MozillaCookieJar(cookie_jar_path)
+        try:
+            cookie_jar.load()
+        except:
+            print_log(f"failed to load cookies file {cookie_jar_path}, continuing without cookies")
+            return None
+
     # clean up the cookie jar and get necessary header values for private API
     session_headers = {}
     for c in cookie_jar:
@@ -628,6 +631,23 @@ def create_priv_api_session(cookie_jar_path):
     priv_session.headers = session_headers
     priv_session.cookies = cookie_jar
     return priv_session
+
+def get_cookies_from_username_password(username, password):
+    session = requests.Session()
+
+    body = {
+        "mail": username,
+        "password": password,
+    }
+
+    response = session.post("https://www.openrec.tv/viewapp/v4/mobile/user/login", data=body)
+    json_response = response.json()
+
+    if json_response["status"] < 0:
+        print_log("openrec", json_response["error_message"])
+        sys.exit()
+
+    return response.cookies
 
 def print_log(component, message, level=LogLevel.BASIC):
     if level == LogLevel.VERBOSE and not args.verbose:
@@ -648,6 +668,8 @@ def get_arguments():
     parser.add_argument("--skip-convert", action="store_true", help="do not use ffmpeg to convert the MPEG-TS stream to MPEG-4")
     parser.add_argument("--cookies", metavar="COOKIES FILE", type=str, help="path to a Netscape format cookies file where cookies will be read from/written to")
     parser.add_argument("links", metavar="LINK", nargs="*", help="openrec channel or video link(s)/ids")
+    parser.add_argument("-u", "--username", type=str, help="account's username to get cookies")
+    parser.add_argument("-p", "--password", type=str, help="account's password to get cookies")
     return parser.parse_args()
 
 def main():
@@ -655,9 +677,13 @@ def main():
     priv_api_session = None
     if args.cookies:
         if os.path.isfile(args.cookies):
-            priv_api_session = create_priv_api_session(args.cookies)
+            priv_api_session = create_priv_api_session(cookie_jar_path=args.cookies)
         else:
             print_log("openrec-dl", f"could not find cookies file \'{args.cookies}\', continuing without cookies")
+    elif args.username and args.password:
+        cookies = get_cookies_from_username_password(args.username, args.password)
+        priv_api_session = create_priv_api_session(cookie_jar=cookies)
+
     if args.version:
         print(VERSION_STRING)
         return
