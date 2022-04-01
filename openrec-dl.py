@@ -374,8 +374,7 @@ def derive_media_playlists(movie_id, media_json, ps):
                                 print_log(f"info:{movie_id}", "failed due to bad response from view limit endpoint")
                                 print_log(f"info:{movie_id}", f"private API body returned status code {view_json['status']}: {view_json['message']}", LogLevel.VERBOSE)
                                 break
-                            print(view_json)
-                            view_data = view_json["data"][0]
+                            view_data = view_json["data"]["items"][0]
                             if view_data["has_permission"]:
                                 # success, no break so detail request is made again
                                 print_log(f"info:{movie_id}", f"using free watch, you have {view_data['remain']} watches remaining")
@@ -666,10 +665,10 @@ def get_arguments():
     parser.add_argument("-F", "--list-formats", action="store_true", help="print available format details for a video and exit")
     parser.add_argument("--skip-download", action="store_true", help="do not download the video")
     parser.add_argument("--skip-convert", action="store_true", help="do not use ffmpeg to convert the MPEG-TS stream to MPEG-4")
-    parser.add_argument("--cookies", metavar="COOKIES FILE", type=str, help="path to a Netscape format cookies file where cookies will be read from/written to")
+    parser.add_argument("--cookies", metavar="COOKIES FILE", type=str, help="path to a Netscape format cookies file")
     parser.add_argument("links", metavar="LINK", nargs="*", help="openrec channel or video link(s)/ids")
-    parser.add_argument("-u", "--username", type=str, help="account's username to get cookies")
-    parser.add_argument("-p", "--password", type=str, help="account's password to get cookies")
+    parser.add_argument("-u", "--username", type=str, help="account's username")
+    parser.add_argument("-p", "--password", type=str, help="account's password")
     return parser.parse_args()
 
 def main():

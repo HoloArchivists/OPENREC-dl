@@ -1,4 +1,4 @@
-requests_toolbelt==0.9.1
-gevent==21.1.2
-requests==2.22.0
-progress==1.5
+requests_toolbelt
+gevent
+requests
+progress

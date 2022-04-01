@@ -32,10 +32,12 @@ python3 openrec-dl.py [ARGUMENTS] LINK/ID [LINK/ID...]
 -F, --list-formats            print available format details for a video and exit
 --skip-download               do not download the video
 --skip-convert                do not use ffmpeg to convert the MPEG-TS stream to MPEG-4
+-u, --username                username/email address for an openrec.tv account
+-p, --password                password for an openrec.tv account
 --cookies                     a Netscape format cookies file, may make available some
                               downloads that are otherwise unavailable
 ```
 
-## Cookies
+## Authentication
 
-If you are using a cookies file and have a free account, the downloader will attempt to use the ability to view two videos free per day, but only if it cannot get around this restriction already. If you have premium you should encounter no limits to what videos the downloader can access.
+You can use either a Netscape cookie file (with `--cookies`) or a set of credentials (with `--username` and `--password`) to authenticate with openrec-dl. If have a free account, the downloader will attempt to use the ability to view two videos free per day, but only if it cannot get around this restriction already. If you have a premium account you should encounter no limits to what videos the downloader can access.
