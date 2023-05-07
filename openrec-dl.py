@@ -85,6 +85,7 @@ class StreamDownloader():
         adapter = requests.adapters.HTTPAdapter(pool_connections=5, pool_maxsize=5, max_retries=10)
         self.m3u8_session.mount('http://', adapter)
         self.m3u8_session.mount('https://', adapter)
+        self.m3u8_session.headers = {"Referer": "https://www.openrec.tv/"}
         self.success = True
         self.failed_list = []
         self.completed = {}
@@ -465,7 +466,7 @@ def dl_m3u8_video(movie_id, movie_filename, m3u8_link):
             
             # get necessary variables ready
             playlist_base = urllib.parse.urljoin(m3u8_link, ".")
-            m3u8_text = requests.get(m3u8_link).text
+            m3u8_text = requests.get(m3u8_link, headers={"Referer": "https://www.openrec.tv/"}).text
             ts_list = [n for n in m3u8_text.splitlines() if n and not n.startswith("#")]
             ordered_ts_list = list(zip(ts_list, [n for n in range(len(ts_list))]))
 
@@ -648,10 +649,10 @@ def get_cookies_from_username_password(username, password):
     login_json = login_response.json()
     if login_json["status"] < 0:
         print_log("openrec", "failed to login with provided credentials")
-        print_log("openrec", f"login body returned status code {login_json['status']}: {login_response['error_message']}")
+        print_log("openrec", f"login body returned status code {login_json['status']}: {login_json['error_message']}")
         sys.exit()
 
-    return response.cookies
+    return login_response.cookies
 
 def print_log(component, message, level=LogLevel.BASIC):
     if level == LogLevel.VERBOSE and not args.verbose:
