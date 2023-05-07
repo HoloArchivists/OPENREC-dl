@@ -33,6 +33,7 @@ GAME_PL_HOST=r'^https?:\/\/[a-z0-9]{1,}\.cloudfront\.net\/[0-9]{1,}\/[0-9]{1,}_[
 COOKIE_DOMAIN="www.openrec.tv"
 PUBLIC_API="https://public.openrec.tv/external/api/v5/"
 PRIVATE_API="https://apiv5.openrec.tv/api/v5/"
+LOGIN_ENDPOINT="https://www.openrec.tv/viewapp/v4/mobile/user/login"
 MAX_MOVIE_RESPONSE=40
 
 NORMAL_MAP = {
@@ -514,8 +515,9 @@ def mpeg_convert(file_path):
 # based on parts of https://github.com/ytdl-org/youtube-dl/blob/master/youtube_dl/extractor/common.py
 def get_m3u8_info(playlist_link):
     m3u8_info = []
-    m3u8_text = requests.get(playlist_link).text
     print_log("get-m3u8-info", f"retrieving playlist from {playlist_link}", LogLevel.VERBOSE)
+    m3u8_r = requests.get(playlist_link, headers={"Referer": "https://www.openrec.tv/"})
+    m3u8_text = m3u8_r.text
     media_details = None
     format_details = None
     for line in m3u8_text.splitlines():
@@ -623,10 +625,8 @@ def create_priv_api_session(cookie_jar_path=None, cookie_jar=None):
     for c in cookie_jar:
         if c.domain != COOKIE_DOMAIN:
             cookie_jar.clear(c.domain, c.path, c.name)
-        elif c.name == "access_token":
-            session_headers["access-token"] = c.value
-        elif c.name == "uuid":
-            session_headers["uuid"] = c.value
+        elif c.name in ["access_token", "random", "token", "uuid"]:
+            session_headers[c.name.replace("_", "-")] = c.value
     priv_session.headers = session_headers
     priv_session.cookies = cookie_jar
     return priv_session
@@ -639,11 +639,16 @@ def get_cookies_from_username_password(username, password):
         "password": password,
     }
 
-    response = session.post("https://www.openrec.tv/viewapp/v4/mobile/user/login", data=body)
-    json_response = response.json()
+    login_response = session.post(LOGIN_ENDPOINT, data=body)
 
-    if json_response["status"] < 0:
-        print_log("openrec", json_response["error_message"])
+    if not login_response.ok:
+        print_log("openrec", "failed to login with provided credentials")
+        print_log("openrec", f"login response returned status code {login_response.status_code}", LogLevel.VERBOSE)
+        sys.exit()
+    login_json = login_response.json()
+    if login_json["status"] < 0:
+        print_log("openrec", "failed to login with provided credentials")
+        print_log("openrec", f"login body returned status code {login_json['status']}: {login_response['error_message']}")
         sys.exit()
 
     return response.cookies
@@ -682,6 +687,8 @@ def main():
     elif args.username and args.password:
         cookies = get_cookies_from_username_password(args.username, args.password)
         priv_api_session = create_priv_api_session(cookie_jar=cookies)
+    elif args.username or args.password:
+        print_log("openrec-dl", f"missing --username or --password, skipping login")
 
     if args.version:
         print(VERSION_STRING)
