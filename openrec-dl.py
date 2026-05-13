@@ -28,12 +28,15 @@ FULL_SIZE_REP = r'.\g<ext>?q=100&quality=100&'
 CLEAN_FILENAME_KINDA = r'[^\w\-_\. \[\]\(\)]'
 OLD_PL_HOST = r'^https?:\/\/openrec-live\.s3\.amazonaws\.com\/studio\/[0-9]{1,}\/(?P<vid>[0-9]{1,})\/index\.m3u8$'
 NEW_PL_HOST = r'^https?:\/\/[a-z0-9]{1,}\.cloudfront\.net\/[a-f0-9]{1,}\/(?P<pname>[^\/]+)\.m3u8$'
-GAME_PL_HOST = r'^https?:\/\/[a-z0-9]{1,}\.cloudfront\.net\/[0-9]{1,}\/[0-9]{1,}_[a-zA-Z]{1,}\/game\/(?P<pname>[^\/]+)\.m3u8$'
+GAME_PL_HOST = r'^https?:\/\/[a-z0-9]{1,}\.cloudfront\.net\/[0-9]{1,}\/[0-9]{1,}_' + \
+               r'[a-zA-Z]{1,}\/game\/(?P<pname>[^\/]+)\.m3u8$'
+ARCHIVE_PL_HOST = r'https?:\/\/archive-hls\.station\.openrec\.tv\/[a-zA-Z0-9]{1,}\/playlist\.m3u8$'
 COOKIE_DOMAIN = "www.openrec.tv"
 PUBLIC_API = "https://public.openrec.tv/external/api/v5/"
 PRIVATE_API = "https://apiv5.openrec.tv/api/v5/"
 LOGIN_ENDPOINT = "https://www.openrec.tv/viewapp/v4/mobile/user/login"
 MAX_MOVIE_RESPONSE = 40
+POOL_SIZE = 20
 
 NORMAL_MAP = {
     "url": "normal",
@@ -56,6 +59,16 @@ PLAYLIST_MAP = {
     "url_medium": "chunklist_medium/chunklist",
     "url_low_latency": "chunklist_low/chunklist",
     "url_ull": "chunklist_144p/chunklist"
+}
+
+ARCHIVE_MAP = {
+    "url": "playlist",
+    "url_public": "playlist",
+    "url_audio": "chunklist_3",
+    "url_audio2": "chunklist_4",
+    "url_high": "chunklist_0",
+    "url_medium": "chunklist_1",
+    "url_low": "chunklist_2"
 }
 
 GAME_MAP = {
@@ -86,7 +99,7 @@ class StreamDownloader():
     def __init__(self, playlist_base):
         self.m3u8_session = sessions.BaseUrlSession(base_url=playlist_base)
         adapter = requests.adapters.HTTPAdapter(
-            pool_connections=5, pool_maxsize=5, max_retries=10)
+            pool_connections=POOL_SIZE, pool_maxsize=POOL_SIZE, max_retries=10)
         self.m3u8_session.mount('http://', adapter)
         self.m3u8_session.mount('https://', adapter)
         self.m3u8_session.headers = {"Referer": "https://www.openrec.tv/"}
@@ -105,7 +118,7 @@ class StreamDownloader():
         join_thread.join()
 
     def _download_segments(self, ts_list):
-        Pool(10).map(self._download_worker, ts_list)
+        Pool(POOL_SIZE).map(self._download_worker, ts_list)
         if not self.success:
             ts_list = self.failed_list
             self.failed_list = []
@@ -123,9 +136,11 @@ class StreamDownloader():
                         segment_file.write(ts_r.content)
                     self.completed[ts_index] = segment_filename
                     return
-            except:
+            except Exception:
                 print_log(
-                    "download worker", f"failed to download {ts_segment}, retrying ({retry}/5)...")
+                    "download worker",
+                    f"failed to download {ts_segment}, retrying ({retry}/5)..."
+                )
         self.success = False
 
     def _append_file(self):
@@ -184,20 +199,29 @@ def dl_channel(s, ps, channel_id):
                 break
         if not found_full_json:
             print_log(
-                f"channel:{channel_id}", f"failed to get complete channel information from API")
+                f"channel:{channel_id}",
+                "failed to get complete channel information from API"
+            )
     else:
-        print_log(f"channel:{channel_id}",
-                  f"failed to get complete channel information from API")
-        print_log(f"channel:{channel_id}",
-                  f"API response returned status code {search_response.status_code}", LogLevel.VERBOSE)
+        print_log(
+            f"channel:{channel_id}",
+            "failed to get complete channel information from API"
+        )
+        print_log(
+            f"channel:{channel_id}",
+            f"API response returned status code {search_response.status_code}",
+            LogLevel.VERBOSE
+        )
 
     if args.write_info_json:
         info_filename = f"{channel_string}.info.json"
         info_filepath = os.path.join(args.directory, info_filename)
         if os.path.isfile(f"{info_filepath}.tmp"):
             os.remove(f"{info_filepath}.tmp")
-        print_log(f"info:{channel_id}",
-                  f"writing channel information to '{info_filename}'")
+        print_log(
+            f"info:{channel_id}",
+            f"writing channel information to '{info_filename}'"
+        )
         with open(f"{info_filepath}.tmp", "w") as channel_info:
             channel_info.write(json.dumps(c_json))
         if os.path.isfile(info_filepath):
@@ -223,7 +247,10 @@ def dl_channel(s, ps, channel_id):
         else:
             print_log(f"icon:{channel_id}", "failed to retrieve channel icon")
             print_log(
-                f"icon:{channel_id}", f"API response returned status code {icon_response.status_code}", LogLevel.VERBOSE)
+                f"icon:{channel_id}",
+                f"API response returned status code {icon_response.status_code}",
+                LogLevel.VERBOSE
+            )
 
         # cover (banner)
         full_size_cover_url = c_json["l_cover_image_url"]
@@ -243,7 +270,10 @@ def dl_channel(s, ps, channel_id):
         else:
             print_log(f"icon:{channel_id}", "failed to retrieve channel cover")
             print_log(
-                f"icon:{channel_id}", f"API response returned status code {cover_response.status_code}", LogLevel.VERBOSE)
+                f"icon:{channel_id}",
+                f"API response returned status code {cover_response.status_code}",
+                LogLevel.VERBOSE
+            )
 
     # retrieve list of all channel movies from API
     movie_list = []
@@ -260,10 +290,11 @@ def dl_channel(s, ps, channel_id):
     while len(movie_list_response) == MAX_MOVIE_RESPONSE or movie_search_params["page"] == 1:
         print_log(f"channel:{channel_id}",
                   f"downloading videos page {movie_search_params['page']}")
-        movie_list_response = s.get("search-movies", params=movie_search_params).json()
-        movie_list.append(movie_list_response)
+        movie_list_response = s.get(
+            "search-movies", params=movie_search_params).json()
+        movie_list.extend(movie_list_response)
         movie_search_params["page"] += 1
-    movie_list.append(movie_list_response)
+    movie_list.extend(movie_list_response)
 
     for movie_index in range(len(movie_list)):
         print_log(f"channel:{channel_id}",
@@ -286,13 +317,19 @@ def dl_movie(s, ps, movie_id):
     if not movie_response.ok:
         print_log(f"info:{movie_id}", "failed to get movie information")
         print_log(
-            f"info:{movie_id}", f"API response returned status code {movie_response.status_code}", LogLevel.VERBOSE)
+            f"info:{movie_id}",
+            f"API response returned status code {movie_response.status_code}",
+            LogLevel.VERBOSE
+        )
         return
     m_json = movie_response.json()
     if "status" in m_json:
         print_log(f"info:{movie_id}", "failed to get movie information")
         print_log(
-            f"info:{movie_id}", f"API body returned status code {m_json['status']}: {m_json['message']}", LogLevel.VERBOSE)
+            f"info:{movie_id}",
+            f"API body returned status code {m_json['status']}: {m_json['message']}",
+            LogLevel.VERBOSE
+        )
         return
 
     # string to use in output video names
@@ -311,7 +348,7 @@ def dl_movie(s, ps, movie_id):
         formats_list = get_m3u8_info(m_json["media"]["url"])
 
     if args.list_formats:
-        print_log(f"movie:{movie_id}", f"available formats:")
+        print_log(f"movie:{movie_id}", "available formats:")
         print_formats(formats_list)
         return
 
@@ -320,17 +357,23 @@ def dl_movie(s, ps, movie_id):
     for format_settings in formats_list:
         if args.format == "best":
             if format_settings["media"]["NAME"] == "Source":
-                downloading_format = urllib.parse.urljoin(
-                    m_json["media"]["url"], format_settings["location"])
+                downloading_format = format_settings
                 break
-            elif int(format_settings['format']['BANDWIDTH']) > best_bitrate:
-                downloading_format = urllib.parse.urljoin(
-                    m_json["media"]["url"], format_settings["location"])
-                best_bitrate = int(format_settings['format']['BANDWIDTH'])
-        elif args.format in {format_settings["media"]["NAME"], format_settings["media"]["GROUP-ID"]}:
-            downloading_format = urllib.parse.urljoin(
-                m_json["media"]["url"], format_settings["location"])
+            elif ("BANDWIDTH" in format_settings["format"] and
+                  int(format_settings["format"]["BANDWIDTH"]) > best_bitrate):
+                downloading_format = format_settings
+                best_bitrate = int(format_settings["format"]["BANDWIDTH"])
+        elif args.format in [format_settings["media"]["NAME"], format_settings["media"]["GROUP-ID"]]:
+            downloading_format = format_settings
             break
+    vod_link = urllib.parse.urljoin(
+        m_json["media"]["url"], downloading_format["location"])
+    aud_link = None
+    if "AUDIO" in downloading_format["format"] and downloading_format["format"]["AUDIO"]:
+        for format_settings in formats_list:
+            if format_settings["media"]["GROUP-ID"] == downloading_format["format"]["AUDIO"]:
+                aud_link = urllib.parse.urljoin(
+                    m_json["media"]["url"], format_settings["location"])
 
     if args.write_info_json:
         info_filename = f"{movie_string}.info.json"
@@ -367,19 +410,24 @@ def dl_movie(s, ps, movie_id):
             print_log(f"thumbnail:{movie_id}",
                       "failed to retrieve video thumbnail")
             print_log(
-                f"thumbnail:{movie_id}", f"API response returned status code {thumb_response.status_code}", LogLevel.VERBOSE)
+                f"thumbnail:{movie_id}",
+                f"API response returned status code {thumb_response.status_code}",
+                LogLevel.VERBOSE
+            )
 
     if args.write_live_chat:
         dl_live_chat(s, movie_id, movie_string, m_json["started_at"])
 
     if not args.skip_download:
-        if downloading_format is not None:
-            dl_m3u8_video(movie_id, movie_string, downloading_format)
+        if vod_link is not None:
+            dl_m3u8_video(movie_id, movie_string, vod_link, aud_link)
         else:
             print_log(
-                f"movie:{movie_id}", f"could not find video format '{args.format}'. to view all available formats, use --list-formats")
+                f"movie:{movie_id}",
+                f"could not find video format '{args.format}'. to view all available formats, use --list-formats"
+            )
     else:
-        print_log(f"movie:{movie_id}", f"skipping download")
+        print_log(f"movie:{movie_id}", "skipping download")
 
 
 def derive_media_playlists(movie_id, media_json, ps):
@@ -395,17 +443,25 @@ def derive_media_playlists(movie_id, media_json, ps):
                     print_log(f"info:{movie_id}",
                               "failed to get movie information")
                     print_log(
-                        f"info:{movie_id}", f"private API response returned status code {priv_movie_response.status_code}", LogLevel.VERBOSE)
+                        f"info:{movie_id}",
+                        f"private API response returned status code {priv_movie_response.status_code}",
+                        LogLevel.VERBOSE
+                    )
                     break
                 pm_json = priv_movie_response.json()
                 if "status" in pm_json and pm_json["status"] < 0:
-                    print_log(f"info:{movie_id}",
-                              "failed to get movie information")
                     print_log(
-                        f"info:{movie_id}", f"private API body returned status code {pm_json['status']}: {pm_json['message']}", LogLevel.VERBOSE)
+                        f"info:{movie_id}",
+                        "failed to get movie information"
+                    )
+                    print_log(
+                        f"info:{movie_id}",
+                        f"private API body returned status code {pm_json['status']}: {pm_json['message']}",
+                        LogLevel.VERBOSE
+                    )
                     break
                 if len(pm_json["data"]["items"]) > 0:
-                    if pm_json["data"]["items"][0]["media"]["url"] != None:
+                    if pm_json["data"]["items"][0]["media"]["url"] is not None:
                         base_url = pm_json["data"]["items"][0]["media"]["url"]
                         break
                     elif not view_res:
@@ -417,43 +473,68 @@ def derive_media_playlists(movie_id, media_json, ps):
                                 "users/me/views-limit", json={"movie_id": movie_id})
                             if not view_res.ok:
                                 print_log(
-                                    f"info:{movie_id}", "failed to request watch for movie")
+                                    f"info:{movie_id}",
+                                    "failed to request watch for movie"
+                                )
                                 print_log(
-                                    f"info:{movie_id}", f"private API response returned status code {view_res.status_code}", LogLevel.VERBOSE)
+                                    f"info:{movie_id}",
+                                    f"private API response returned status code {view_res.status_code}",
+                                    LogLevel.VERBOSE
+                                )
                                 break
                             view_json = view_res.json()
                             if "status" in view_json and view_json["status"] < 0:
                                 print_log(
-                                    f"info:{movie_id}", "failed due to bad response from view limit endpoint")
+                                    f"info:{movie_id}",
+                                    "failed due to bad response from view limit endpoint"
+                                )
                                 print_log(
-                                    f"info:{movie_id}", f"private API body returned status code {view_json['status']}: {view_json['message']}", LogLevel.VERBOSE)
+                                    f"info:{movie_id}",
+                                    f"private API body returned status code {view_json['status']}: " +
+                                    f"{view_json['message']}",
+                                    LogLevel.VERBOSE
+                                )
                                 break
                             view_data = view_json["data"]["items"][0]
                             if view_data["has_permission"]:
                                 # success, no break so detail request is made again
                                 print_log(
-                                    f"info:{movie_id}", f"using free watch, you have {view_data['remain']} watches remaining")
+                                    f"info:{movie_id}",
+                                    f"using free watch, you have {view_data['remain']} watches remaining"
+                                )
                             elif view_data["remain"] > 0:
                                 # failure, but for some reason the API still says there are free watches available
                                 print_log(
-                                    f"info:{movie_id}", f"failed to get movie access, please report this issue to \'{ISSUES_URL}\'")
+                                    f"info:{movie_id}",
+                                    f"failed to get movie access, please report this issue to \'{ISSUES_URL}\'"
+                                )
                                 break
                             else:
                                 # failure, ran out of free watches
                                 print_log(
-                                    f"info:{movie_id}", f"failed to get movie access, no free watches available")
+                                    f"info:{movie_id}",
+                                    "failed to get movie access, no free watches available"
+                                )
                                 break
                         else:
                             print_log(
-                                f"info:{movie_id}", f"failed to get movie access, no free watches available")
+                                f"info:{movie_id}",
+                                "failed to get movie access, no free watches available"
+                            )
                             break
                     else:
                         print_log(
-                            f"info:{movie_id}", f"failed to get any playlist information, check that you have access to this livestream or report this issue at \'{ISSUES_URL}\'")
+                            f"info:{movie_id}",
+                            "failed to get any playlist information, check that you have access to this " +
+                            f"livestream or report this issue at \'{ISSUES_URL}\'"
+                        )
                         break
                 else:
                     print_log(
-                        f"info:{movie_id}", f"failed to get any playlist information, check that you have access to this livestream or report this issue at \'{ISSUES_URL}\'")
+                        f"info:{movie_id}",
+                        "failed to get any playlist information, check that you have access to this " +
+                        f"livestream or report this issue at \'{ISSUES_URL}\'"
+                    )
                     break
         else:
             # loop through keys and attempt to find a url
@@ -463,7 +544,9 @@ def derive_media_playlists(movie_id, media_json, ps):
                     break
             if not base_url:
                 print_log(
-                    f"info:{movie_id}", "failed to get any playlist information, if you have access to this livestream try using --cookies")
+                    f"info:{movie_id}",
+                    "failed to get any playlist information, if you have access to this livestream try using --cookies"
+                )
     else:
         base_url = media_json["url_public"]
 
@@ -476,9 +559,10 @@ def derive_media_playlists(movie_id, media_json, ps):
     ol_m = re.search(OLD_PL_HOST, base_url)
     nl_m = re.search(NEW_PL_HOST, base_url)
     gl_m = re.search(GAME_PL_HOST, base_url)
+    al_m = re.search(ARCHIVE_PL_HOST, base_url)
     # old hosting, barely any metadata provided, only one index
     if ol_m:
-        v_id = ol_m.group("vid")
+        # v_id = ol_m.group("vid")
         print_log(f"playlist:{movie_id}",
                   "older hosting found, format metadata will be sparse")
         media_json["url"] = base_url
@@ -489,20 +573,28 @@ def derive_media_playlists(movie_id, media_json, ps):
             playlist_name = nl_m.group("pname")
             if playlist_name == "normal":
                 pl_map = NORMAL_MAP
-            elif playlist_name == "public":
+            elif playlist_name.startswith("public"):
                 pl_map = PLAYLIST_MAP
             else:
                 print_log(
-                    f"playlist:{movie_id}", f"index playlist not identified, please report this at \'{ISSUES_URL}\'")
+                    f"playlist:{movie_id}",
+                    f"index playlist not identified, please report this at \'{ISSUES_URL}\'"
+                )
                 # default to assuming new playlist
                 pl_map = PLAYLIST_MAP
         elif gl_m:
             playlist_name = gl_m.group("pname")
             print_log(f"playlist:{movie_id}", "game playlist found")
             pl_map = GAME_MAP
+        elif al_m:
+            playlist_name = "playlist"
+            print_log(f"playlist:{movie_id}", "archive playlist found")
+            pl_map = ARCHIVE_MAP
         else:
             print_log(
-                f"playlist:{movie_id}", f"new playlist host found, please report this at \'{ISSUES_URL}\'")
+                f"playlist:{movie_id}",
+                f"new playlist host found, please report this at \'{ISSUES_URL}\'"
+            )
             return None
         # fill JSON with playlist URLs assumed to exist based on index availability
         if pl_map:
@@ -513,51 +605,103 @@ def derive_media_playlists(movie_id, media_json, ps):
     return media_json
 
 
-def dl_m3u8_video(movie_id, movie_filename, m3u8_link):
-    movie_path = os.path.join(args.directory, f"{movie_filename}")
+def dl_m3u8_video(movie_id, movie_filename, vod_link, aud_link):
+    movie_path = os.path.join(args.directory, movie_filename)
     # don't re-download
     if os.path.isfile(f"{movie_path}.mp4") or (os.path.isfile(f"{movie_path}.ts") and args.skip_convert):
-        print_log(f"movie:{movie_id}", f"already downloaded")
+        print_log(f"movie:{movie_id}", "already downloaded")
     else:
         if os.path.isfile(f"{movie_path}.ts"):
-            print_log(f"movie:{movie_id}", f"already downloaded")
+            print_log(f"movie:{movie_id}", "already downloaded")
         # can't resume downloads (atm), so remove progress
         else:
             if os.path.isfile(f"{movie_path}.ts.tmp"):
                 os.remove(f"{movie_path}.ts.tmp")
                 for seg_file in os.listdir(args.directory):
-                    if re.fullmatch(r"^" + f"{re.escape(movie_filename)}" + r"\.seg[0-9]{1,}$", seg_file):
+                    if re.fullmatch(r"^" + f"{re.escape(movie_filename)}" + r"\.[a-z]{3}\.seg[0-9]{1,}$", seg_file):
                         os.remove(seg_file)
+            links = {
+                "vod": vod_link,
+                "aud": aud_link
+            }
+            for link_type in links:
+                if links[link_type]:
+                    # get necessary variables ready
+                    playlist_base = urllib.parse.urljoin(links[link_type], ".")
+                    m3u8_text = requests.get(links[link_type], headers={
+                                             "Referer": "https://www.openrec.tv/"}).text
+                    init_segment = None
+                    for line in m3u8_text.splitlines():
+                        if line.startswith("#EXT-X-MAP"):
+                            init_segment = line.split("=")[1].strip("\"")
+                    ts_list = [n for n in m3u8_text.splitlines(
+                    ) if n and not n.startswith("#")]
+                    if init_segment:
+                        ts_list.insert(0, init_segment)
+                    ordered_ts_list = list(
+                        zip(ts_list, [n for n in range(len(ts_list))]))
 
-            # get necessary variables ready
-            playlist_base = urllib.parse.urljoin(m3u8_link, ".")
-            m3u8_text = requests.get(
-                m3u8_link, headers={"Referer": "https://www.openrec.tv/"}).text
-            ts_list = [n for n in m3u8_text.splitlines(
-            ) if n and not n.startswith("#")]
-            ordered_ts_list = list(
-                zip(ts_list, [n for n in range(len(ts_list))]))
-
-            # run the downloader
-            print_log(f"movie:{movie_id}",
-                      f"writing video to '{movie_filename}.ts'")
-            stream_downloader = StreamDownloader(playlist_base)
-            download_bar = DownloadBar(f"[movie:{movie_id}]", max=len(ts_list))
-            stream_downloader.run(
-                movie_filename, ordered_ts_list, download_bar)
-
-            # if success, check if converting
-            if stream_downloader.success:
-                download_bar.finish()
-                os.rename(f"{movie_path}.ts.tmp", f"{movie_path}.ts")
+                    # run the downloader
+                    ts_name = f"{movie_filename}.{link_type}"
+                    ts_path = os.path.join(args.directory, ts_name)
+                    print_log(f"movie:{movie_id}",
+                              f"writing {link_type} to '{ts_name}.ts'")
+                    stream_downloader = StreamDownloader(playlist_base)
+                    download_bar = DownloadBar(
+                        f"[movie:{movie_id}]", max=len(ts_list))
+                    stream_downloader.run(
+                        ts_name, ordered_ts_list, download_bar)
+                    # if success, check if converting
+                    if stream_downloader.success:
+                        download_bar.finish()
+                        os.rename(f"{ts_path}.ts.tmp", f"{ts_path}.ts")
+                    else:
+                        print_log(f"movie:{movie_id}",
+                                  f"failed to download {link_type}")
+                        return
+            if links["aud"]:
+                mpeg_merge(movie_path)
             else:
-                print_log(f"movie:{movie_id}", f"failed to download")
-                return
+                os.rename(f"{movie_path}.vod.ts", f"{movie_path}.ts")
         if not args.skip_convert:
-            mpeg_convert(os.path.join(args.directory, f"{movie_filename}"))
+            mpeg_convert(movie_path)
     if args.download_archive:
         with open(args.download_archive, "a") as archive_file:
             archive_file.write(f"{movie_id}\n")
+
+
+def mpeg_merge(file_path):
+    print_log("mpeg-merge",
+              f"muxing video and audio to '{os.path.basename(file_path)}.ts'")
+    for path in [f"{file_path}.vod.ts", f"{file_path}.aud.ts"]:
+        wait_for_file = 0
+        # wait up to 30 seconds for processes (including this one) to release file
+        while wait_for_file < 30:
+            if os.path.isfile(path):
+                break
+            sleep(1)
+            wait_for_file += 1
+        if wait_for_file == 30:
+            print_log("mpeg-merge",
+                      f"could not access file '{os.path.basename(path)}'")
+            return
+    ffmpeg_list = ["ffmpeg", "-i", f"{file_path}.vod.ts", "-i",
+                   f"{file_path}.aud.ts", "-c", "copy", f"{file_path}.ts"]
+    try:
+        ffmpeg_process = Popen(ffmpeg_list, stdout=PIPE, stderr=PIPE)
+        stdout, stderr = ffmpeg_process.communicate()
+    except Exception:
+        print_log("mpeg-merge", "failure in executing ffmpeg")
+        print_log(
+            "ffmpeg",
+            f"stdout: {str(stdout)}\n\nstderr: {str(stderr)}",
+            LogLevel.VERBOSE
+        )
+        return
+    # don't remove vod/aud if .ts was not created
+    if os.path.isfile(f"{file_path}.ts"):
+        os.remove(f"{file_path}.vod.ts")
+        os.remove(f"{file_path}.aud.ts")
 
 
 def mpeg_convert(file_path):
@@ -574,15 +718,18 @@ def mpeg_convert(file_path):
         print_log("mpeg-convert",
                   f"could not access file '{os.path.basename(file_path)}.ts'")
         return
-    ffmpeg_list = ["ffmpeg", "-i", f"{file_path}.ts",
-                   "-acodec", "copy", "-vcodec", "copy", f"{file_path}.mp4"]
+    ffmpeg_list = ["ffmpeg", "-i",
+                   f"{file_path}.ts", "-c", "copy", f"{file_path}.mp4"]
     try:
         ffmpeg_process = Popen(ffmpeg_list, stdout=PIPE, stderr=PIPE)
         stdout, stderr = ffmpeg_process.communicate()
     except Exception:
         print_log("mpeg-convert", "failure in executing ffmpeg")
         print_log(
-            "ffmpeg", f"stdout: {str(stdout)}\n\nstderr: {str(stderr)}", LogLevel.VERBOSE)
+            "ffmpeg",
+            f"stdout: {str(stdout)}\n\nstderr: {str(stderr)}",
+            LogLevel.VERBOSE
+        )
         return
     # don't remove .ts if .mp4 was not created
     if os.path.isfile(f"{file_path}.mp4"):
@@ -601,44 +748,68 @@ def get_m3u8_info(playlist_link):
     media_details = None
     format_details = None
     for line in m3u8_text.splitlines():
-        if line.startswith("#EXT-X-MEDIA:"):
-            # parse media details
-            media_details = parse_m3u8_attributes(line)
-        elif line.startswith("#EXT-X-STREAM-INF:"):
-            # parse format details
-            format_details = parse_m3u8_attributes(line)
-        elif not line.startswith("#"):
-            if line.endswith(".m3u8"):
-                if format_details:
-                    if not media_details:
+        if line:
+            if line.startswith("#EXT-X-MEDIA:"):
+                # parse media details
+                media_details = parse_m3u8_attributes(line)
+                if media_details["TYPE"] == "AUDIO":
+                    print_log(
+                        "get-m3u8-info",
+                        f"found isolated audio details '{media_details['URI']}', will be separate downloads",
+                        LogLevel.VERBOSE
+                    )
+                    m3u8_info += [{
+                        "location": urllib.parse.urljoin(playlist_link, media_details["URI"]),
+                        "media": media_details,
+                        "format": {"NOTES": "No video"}
+                    }]
+                    media_details = None
+            elif line.startswith("#EXT-X-STREAM-INF:"):
+                # parse format details
+                format_details = parse_m3u8_attributes(line)
+            elif not line.startswith("#"):
+                if line.endswith(".m3u8"):
+                    if format_details:
+                        if not media_details:
+                            print_log(
+                                "get-m3u8-info",
+                                f"could not find media details for playlist '{line}', using format details",
+                                LogLevel.VERBOSE
+                            )
+                            if "source" in line:
+                                media_name = "Source"
+                            elif "RESOLUTION" in format_details:
+                                media_name = format_details["RESOLUTION"].split("x")[
+                                    1] + "p"
+                            else:
+                                media_name = line.split("/")[0].split(".")[0]
+                            media_details = {
+                                "NAME": media_name,
+                                "GROUP-ID": "",
+                                "TYPE": ""
+                            }
+                            if "AUDIO" in format_details:
+                                format_details["NOTES"] = "No audio"
+                    else:
                         print_log(
-                            "get-m3u8-info", f"could not find media details for playlist '{line}', using format details", LogLevel.VERBOSE)
-                        if "source" in line:
-                            media_name = "Source"
-                        elif "RESOLUTION" in format_details:
-                            media_name = format_details["RESOLUTION"].split("x")[
-                                1] + "p"
-                        else:
-                            media_name = line.split("/")[0].split(".")[0]
-                        media_details = {"NAME": media_name,
-                                         "GROUP-ID": "", "TYPE": ""}
-                    if not "FRAME-RATE" in format_details:
-                        format_details["FRAME-RATE"] = ""
-                    if not "RESOLUTION" in format_details:
-                        format_details["RESOLUTION"] = ""
-                    if not "CODECS" in format_details:
-                        format_details["CODECS"] = ""
+                            "get-m3u8-info",
+                            f"could not find format details for playlist '{line}', " +
+                            f"please report this issue at \'{ISSUES_URL}\'"
+                        )
+                    if format_details and media_details:
+                        m3u8_info += [{
+                            "location": line,
+                            "media": media_details,
+                            "format": format_details
+                        }]
+                        media_details = None
+                        format_details = None
                 else:
                     print_log(
-                        "get-m3u8-info", f"could not find format details for playlist '{line}', please report this issue at \'{ISSUES_URL}\'")
-                if format_details and media_details:
-                    m3u8_info += [{"location": line,
-                                   "media": media_details, "format": format_details}]
-                    media_details = None
-                    format_details = None
-            else:
-                print_log(
-                    "get-m3u8-info", f"unexpected line in m3u8 file: '{line}'", LogLevel.VERBOSE)
+                        "get-m3u8-info",
+                        f"unexpected line in m3u8 file: '{line}'",
+                        LogLevel.VERBOSE
+                    )
     return m3u8_info
 
 # https://github.com/ytdl-org/youtube-dl/blob/master/youtube_dl/utils.py#L5495
@@ -654,15 +825,24 @@ def parse_m3u8_attributes(attrib):
 
 
 def print_formats(formats_list):
-    print(f"{'NAME':<10} {'GROUP-ID':<8} {'RESOLUTION':<10} {'FPS':<4} {'TBR':<6} {'CODECS':<24}")
-    print(f"{'-' * 10} {'-' * 8} {'-' * 10} {'-' * 4} {'-' * 6} {'-' * 24}")
+    print(f"{'NAME':<10} {'GROUP-ID':<16} {'RESOLUTION':<10} {'FPS':<4} {'TBR':<6} {'CODECS':<24} {'NOTES':<20}")
+    print(f"{'-' * 10} {'-' * 16} {'-' * 10} {'-' * 4} {'-' * 6} {'-' * 24} {'-' * 20}")
     for format_settings in formats_list:
-        print(f"{format_settings['media']['NAME']:<10} " +
-              f"{format_settings['media']['GROUP-ID']:<8} " +
-              f"{format_settings['format']['RESOLUTION']:<10} " +
-              f"{format_settings['format']['FRAME-RATE']:<4} " +
-              f"{str(int(float(format_settings['format']['BANDWIDTH']) / 1000))+'k':<6} " +
-              f"{format_settings['format']['CODECS']:<24}")
+        media = format_settings["media"]
+        printable_format = {
+            "RESOLUTION": "",
+            "FRAME-RATE": 0,
+            "BANDWIDTH": 0,
+            "CODECS": "",
+            "NOTES": ""
+        } | format_settings["format"]
+        print(f"{media['NAME']:<10} " +
+              f"{media['GROUP-ID']:<16} " +
+              f"{printable_format['RESOLUTION']:<10} " +
+              f"{str(float(printable_format['FRAME-RATE'])):<4} " +
+              f"{str(int(float(printable_format['BANDWIDTH']) / 1000))+'k':<6} " +
+              f"{printable_format['CODECS']:<24}" +
+              f"{printable_format['NOTES']:<20}")
 
 
 def dl_live_chat(s, movie_id, movie_filename, started_at):
@@ -701,7 +881,10 @@ def dl_live_chat(s, movie_id, movie_filename, started_at):
                 f"movies/{movie_id}/chats?from_created_at={chat_dt.isoformat()}.000Z&is_including_system_message=false")
     if not chat_response.ok:
         print_log(
-            f"live-chat:{movie_id}", f"unexpected ending with API response status code {chat_response.status_code}", LogLevel.VERBOSE)
+            f"live-chat:{movie_id}",
+            f"unexpected ending with API response status code {chat_response.status_code}",
+            LogLevel.VERBOSE
+        )
     os.rename(f"{live_chat_filepath}.tmp", live_chat_filepath)
 
 
@@ -712,9 +895,8 @@ def create_priv_api_session(cookie_jar_path=None, cookie_jar=None):
         cookie_jar = cookiejar.MozillaCookieJar(cookie_jar_path)
         try:
             cookie_jar.load()
-        except:
-            print_log(
-                f"failed to load cookies file {cookie_jar_path}, continuing without cookies")
+        except Exception:
+            print_log(f"failed to load cookies file {cookie_jar_path}, continuing without cookies")
             return None
 
     # clean up the cookie jar and get necessary header values for private API
@@ -734,21 +916,25 @@ def get_cookies_from_username_password(username, password):
 
     body = {
         "mail": username,
-        "password": password,
+        "password": password
     }
-
     login_response = session.post(LOGIN_ENDPOINT, data=body)
 
     if not login_response.ok:
         print_log("openrec", "failed to login with provided credentials")
         print_log(
-            "openrec", f"login response returned status code {login_response.status_code}", LogLevel.VERBOSE)
+            "openrec",
+            f"login response returned status code {login_response.status_code}",
+            LogLevel.VERBOSE
+        )
         sys.exit()
     login_json = login_response.json()
     if login_json["status"] < 0:
         print_log("openrec", "failed to login with provided credentials")
         print_log(
-            "openrec", f"login body returned status code {login_json['status']}: {login_json['error_message']}")
+            "openrec",
+            f"login body returned status code {login_json['status']}: {login_json['error_message']}"
+        )
         sys.exit()
 
     return login_response.cookies
@@ -768,7 +954,8 @@ def get_arguments():
     parser.add_argument("-d", "--directory", type=str,
                         help="save directory (defaults to current)", default=os.getcwd())
     parser.add_argument("--download-archive", metavar="FILE", type=str,
-                        help="download only videos not listed in the archive file and record the IDs of downloaded videos")
+                        help="download only videos not listed in the archive file and record the IDs of " +
+                        "downloaded videos")
     parser.add_argument("--write-info-json", action="store_true",
                         help="write metadata to .info.json file")
     parser.add_argument("--write-thumbnail", action="store_true",
@@ -776,7 +963,8 @@ def get_arguments():
     parser.add_argument("--write-live-chat", action="store_true",
                         help="write live chat comments to .live_chat.json file")
     parser.add_argument("-f", "--format", type=str,
-                        help="video format, specified by either NAME or GROUP-ID, or the keyword \'best\'", default="best")
+                        help="video format, specified by either NAME or GROUP-ID, or the keyword \'best\'",
+                        default="best")
     parser.add_argument("-F", "--list-formats", action="store_true",
                         help="print available format details for a video and exit")
     parser.add_argument("--skip-download", action="store_true",
@@ -803,14 +991,15 @@ def main():
                 cookie_jar_path=args.cookies)
         else:
             print_log(
-                "openrec-dl", f"could not find cookies file \'{args.cookies}\', continuing without cookies")
+                "openrec-dl",
+                f"could not find cookies file \'{args.cookies}\', continuing without cookies"
+            )
     elif args.username and args.password:
         cookies = get_cookies_from_username_password(
             args.username, args.password)
         priv_api_session = create_priv_api_session(cookie_jar=cookies)
     elif args.username or args.password:
-        print_log("openrec-dl",
-                  f"missing --username or --password, skipping login")
+        print_log("openrec-dl", "missing --username or --password, skipping login")
 
     if args.version:
         print(VERSION_STRING)
