@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 from datetime import datetime
 from enum import Enum
 import gevent
@@ -23,8 +24,6 @@ ISSUES_URL = "https://github.com/HoloArchivists/OPENREC-dl/issues"
 
 OPENREC = r'^(?:https?:\/\/)?(?:www\.)?openrec\.tv\/(?P<type>[^\/]+?)\/(?P<id>[^\/]+)$'
 VALID_LIVE_ID = r'^(?P<id>[a-zA-Z0-9]+?)$'
-FULL_SIZE_IMG = r'\.w[0-9]{1,}\.ttl[0-9]{1,}\.(?P<ext>[a-z]{1,4})\?'
-FULL_SIZE_REP = r'.\g<ext>?q=100&quality=100&'
 CLEAN_FILENAME_KINDA = r'[^\w\-_\. \[\]\(\)]'
 OLD_PL_HOST = r'^https?:\/\/openrec-live\.s3\.amazonaws\.com\/studio\/[0-9]{1,}\/(?P<vid>[0-9]{1,})\/index\.m3u8$'
 NEW_PL_HOST = r'^https?:\/\/[a-z0-9]{1,}\.cloudfront\.net\/[a-f0-9]{1,}\/(?P<pname>[^\/]+)\.m3u8$'
@@ -380,8 +379,7 @@ def dl_movie(s, ps, movie_id):
         info_filepath = os.path.join(args.directory, info_filename)
         if os.path.isfile(f"{info_filepath}.tmp"):
             os.remove(f"{info_filepath}.tmp")
-        print_log(f"info:{movie_id}",
-                  f"writing video information to '{info_filename}'")
+        print_log(f"info:{movie_id}", f"writing video information to '{info_filename}'")
         with open(f"{info_filepath}.tmp", "w") as movie_info:
             movie_info.write(json.dumps(m_json))
         if os.path.isfile(info_filepath):
@@ -389,16 +387,13 @@ def dl_movie(s, ps, movie_id):
         os.rename(f"{info_filepath}.tmp", info_filepath)
 
     if args.write_thumbnail:
-        full_size_thumb_url = re.sub(
-            FULL_SIZE_IMG, FULL_SIZE_REP, m_json["thumbnail_url"])
-        thumbnail_format = urllib.parse.parse_qs(
-            full_size_thumb_url)["format"][0]
+        full_size_thumb_url = m_json["l_thumbnail_url"]
+        thumbnail_format = json.loads(base64.b64decode(full_size_thumb_url.rsplit("/", 1)[1]))["outputFormat"]
         thumbnail_filename = f"{movie_string}.{thumbnail_format}"
         thumbnail_filepath = os.path.join(args.directory, thumbnail_filename)
         if os.path.isfile(f"{thumbnail_filepath}.tmp"):
             os.remove(f"{thumbnail_filepath}.tmp")
-        print_log(f"thumbnail:{movie_id}",
-                  f"writing thumbnail to '{thumbnail_filename}'")
+        print_log(f"thumbnail:{movie_id}", f"writing thumbnail to '{thumbnail_filename}'")
         thumb_response = requests.get(full_size_thumb_url)
         if thumb_response.ok:
             with open(f"{thumbnail_filepath}.tmp", "wb") as movie_thumbnail:
@@ -407,8 +402,7 @@ def dl_movie(s, ps, movie_id):
                 os.remove(thumbnail_filepath)
             os.rename(f"{thumbnail_filepath}.tmp", thumbnail_filepath)
         else:
-            print_log(f"thumbnail:{movie_id}",
-                      "failed to retrieve video thumbnail")
+            print_log(f"thumbnail:{movie_id}", "failed to retrieve video thumbnail")
             print_log(
                 f"thumbnail:{movie_id}",
                 f"API response returned status code {thumb_response.status_code}",
