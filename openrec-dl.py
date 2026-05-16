@@ -70,6 +70,14 @@ ARCHIVE_MAP = {
     "url_low": "chunklist_2"
 }
 
+INDEX_MAP = {
+    "url": "index",
+    "_url_playlist": "index",
+    "url_source": "1800k",
+    "url_high": "1000k",
+    "url_medium": "600k"
+}
+
 GAME_MAP = {
     "url_source": "source",
     "url_high": "2000kbps",
@@ -365,8 +373,7 @@ def dl_movie(s, ps, movie_id):
         elif args.format in [format_settings["media"]["NAME"], format_settings["media"]["GROUP-ID"]]:
             downloading_format = format_settings
             break
-    vod_link = urllib.parse.urljoin(
-        m_json["media"]["url"], downloading_format["location"])
+    vod_link = urllib.parse.urljoin(m_json["media"]["url"], downloading_format["location"])
     aud_link = None
     if "AUDIO" in downloading_format["format"] and downloading_format["format"]["AUDIO"]:
         for format_settings in formats_list:
@@ -569,6 +576,8 @@ def derive_media_playlists(movie_id, media_json, ps):
                 pl_map = NORMAL_MAP
             elif playlist_name.startswith("public"):
                 pl_map = PLAYLIST_MAP
+            elif playlist_name.startswith("index"):
+                pl_map = INDEX_MAP
             else:
                 print_log(
                     f"playlist:{movie_id}",
@@ -594,8 +603,7 @@ def derive_media_playlists(movie_id, media_json, ps):
         if pl_map:
             for pl_type in pl_map:
                 if pl_type not in media_json or not media_json[pl_type]:
-                    media_json[pl_type] = urllib.parse.urljoin(
-                        base_url, f"{pl_map[pl_type]}.m3u8")
+                    media_json[pl_type] = urllib.parse.urljoin(base_url, f"{pl_map[pl_type]}.m3u8")
     return media_json
 
 
