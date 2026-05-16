@@ -589,10 +589,12 @@ def derive_media_playlists(movie_id, media_json, ps):
             playlist_name = gl_m.group("pname")
             print_log(f"playlist:{movie_id}", "game playlist found")
             pl_map = GAME_MAP
+            pl_map["url"] = playlist_name
         elif al_m:
             playlist_name = "playlist"
             print_log(f"playlist:{movie_id}", "archive playlist found")
             pl_map = ARCHIVE_MAP
+            pl_map["url"] = playlist_name
         else:
             print_log(
                 f"playlist:{movie_id}",
